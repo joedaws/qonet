@@ -33,183 +33,16 @@ from scipy.linalg import block_diag
 import matplotlib.pyplot as plt
 
 # import legendre root getter
-from roots import *
+from .roots import *
+
+# import deafult coefs
+from .defaults import defaultcoefs, defaultidx
 
 # legendre polynomial evaluation
 from numpy.polynomial.legendre import legval
 
 # import product network
-from prodnet import BiTreeProd
-
-class PolyNet(nn.Module):
-    def __init__(self,pinfo):
-        """
-        INPUTS:
-
-        pinfo -- relavent information for 
-        """
-        super(PolyNet,self).__init__()
-        # pinfo is PolyInfo type class
-        self.info = pinfo
-        # list of networks
-        self.terms = nn.ModuleList()
-        
-        # instantiate a TensorPolyNetwork for EACH term in the network
-        for i,nu in enumerate(self.info.idxset): 
-            bias_vec = self.info.all_bias[i]
-            weight_mat = self.info.all_weight[i]
-            # see if more than quadratic
-            if len(bias_vec) > 1:
-                self.terms.append(\
-                TensorPolynomial(self.info.dim,bias_vec,weight_mat,self.info.L)\
-                )
-            else:
-                self.terms.append(nn.Linear(pinfo.dim,pinfo.outdim))
-
-        # OUTPUT layer
-        #self.last = nn.Linear(self.info.idxcard,self.info.outdim)
-        self.last = nn.Linear(self.info.idxcard,self.info.outdim,bias=False)
-
-    def forward(self,x):
-        """
-        x -- input of size (N,d) where N is the number of 
-             sample points.
-        """
-        # variable for collecting output of each 
-        lastx = torch.Tensor(x.shape[0],self.info.idxcard) 
-
-        # iterate over each term in the polynomial expansion
-        for i,nu in enumerate(self.terms):
-            lastx[:,i:i+1] = nu(x)
-
-        return self.last(lastx)
-
-    def poly_init(self):
-        """
-        Initializes all network parameters so that it behaves like a 
-        polynomial on the domain [a,b]^d
-        """
-        with torch.no_grad():
-            # initialize TensorPolynomial
-            for i,nu in enumerate(self.terms):
-                if nu.__class__.__name__ == 'TensorPolynomial':
-                    # initialize TensorPolynomial
-                    nu.poly_init()
-                if nu.__class__.__name__ == 'Linear':
-                    # linear case
-                    if sum(self.info.idxset[i]) == 1:
-                        nu.weight.fill_(1.)
-                        nu.bias.fill_(0.)
-                    # constant case:
-                    elif sum(self.info.idxset[i]) == 0:
-                        nu.weight.fill_(0.)
-                        nu.bias.fill_(1.)
-
-            # initialize the coefficients in the last layer
-            #self.last.bias.fill_(0.) 
-            self.last.weight.data = \
-            torch.tensor(self.info.coef_mat,dtype=torch.float)
-        return
-
-    def xavier_init(self):
-        """
-        initializes the linear layers using Xavier initialization.
-        The weights are initialized using xavier random initialization.
-        """
-        with torch.no_grad():
-            pass
-        return 
-
-class TensorPolynomial(nn.Module):
-    def __init__(self,dim,bias_vec,weight_mat,num_L):
-        """
-        INPUTS:
-        
-        bias_vec -- np array of roots be used in the first layer
-        weight_vec -- np array of weights to be used in the first layer
-        num_L      -- number of layers to use in each ProdNet in the BiTreeNet
-        """
-        super(TensorPolynomial,self).__init__()
-        
-        self.dim = dim
-        self.bias_vec = bias_vec
-        self.weight_mat = weight_mat
-        self.num_L = num_L
-        self.max_val = max(bias_vec)
-        self.min_val = min(bias_vec)
-
-        # set some paramters for the BiTreeProd Network we will use 
-        in_N = bias_vec.size
-
-        # define first layer to transform inputs into factored polynomial type
-        self.first = nn.Linear(dim,in_N)
-
-        # BiTreeProd network for multiplying all necessary (x_i - r_i)
-        self.btp = BiTreeProd(in_N,num_L,self.min_val,self.max_val)
-
-    def forward(self,x):
-        """
-        forward propogation through the network
-        """
-        h = self.first(x)
-        return self.btp(h)
-        
-    def poly_init(self):
-        with torch.no_grad():
-            # initialize first layer with roots and weights
-            self.first.weight.data = \
-            torch.tensor(self.weight_mat,dtype=torch.float)
-            self.first.bias.data = \
-            torch.tensor(self.bias_vec,dtype=torch.float)
-
-            # polyinit the BiTreeProd Network
-            self.btp.poly_init()
-
-        return
-
-    def set_double(self):
-        # set first layer to double
-        self.first.double()
-
-        # set btp to double
-        self.btp.set_double()
-
-        return
-
-# a default index set of dim=4
-# this is a total degree set of order 2
-defaultidx = np.array([[0, 0, 0, 0],
-                       [0, 0, 0, 1],
-                       [0, 0, 1, 0],
-                       [0, 1, 0, 0],
-                       [1, 0, 0, 0],
-                       [0, 0, 0, 2],
-                       [0, 0, 1, 1],
-                       [0, 1, 0, 1],
-                       [1, 0, 0, 1],
-                       [0, 0, 2, 0],
-                       [0, 1, 1, 0],
-                       [1, 0, 1, 0],
-                       [0, 2, 0, 0],
-                       [1, 1, 0, 0],
-                       [2, 0, 0, 0]])
-
-# a default set of coefficients
-defaultcoefs = np.array([[ 0.2],
-                         [-0.4],
-                         [-0.1],
-                         [ 0.2],
-                         [ 0.5],
-                         [ 0.3],
-                         [ 0.1],
-                         [ 0.3],
-                         [-0.6],
-                         [ 0.4],
-                         [ 0.3],
-                         [-0.7],
-                         [ 0.3],
-                         [ 0.4],
-                         [-0.4]])
+from .prodnet import BiTreeProd
 
 class PolyInfo:
     """
@@ -240,7 +73,6 @@ class PolyInfo:
         self.first_wid = sum(sum(self.idxset))
         self.idxcard = self.idxset.shape[0]
         self.L = L
-        self.has_const = check_const(self.idxset)
         self.all_scalfac = np.zeros((self.idxcard,self.outdim))
         self.all_bias = self.get_bias()
         self.all_weight = self.get_weight()
@@ -374,7 +206,181 @@ class PolyInfo:
             y += val
 
         return y
-    
+
+# default polyinfo for generic PolyNet
+default_info = PolyInfo()
+
+class PolyNet(nn.Module):
+    def __init__(self,pinfo=default_info):
+        """
+        INPUTS:
+
+        pinfo -- relavent information for 
+        """
+        super(PolyNet,self).__init__()
+        # pinfo is PolyInfo type class
+        self.info = pinfo
+        # list of networks
+        self.terms = nn.ModuleList()
+        
+        # instantiate a TensorPolyNetwork for EACH term in the network
+        for i,nu in enumerate(self.info.idxset): 
+            bias_vec = self.info.all_bias[i]
+            weight_mat = self.info.all_weight[i]
+            # see if more than quadratic
+            if len(bias_vec) > 1:
+                self.terms.append(\
+                TensorPolynomial(self.info.dim,bias_vec,weight_mat,self.info.L)\
+                )
+            else:
+                self.terms.append(nn.Linear(pinfo.dim,pinfo.outdim))
+
+        # OUTPUT layer
+        #self.last = nn.Linear(self.info.idxcard,self.info.outdim)
+        self.last = nn.Linear(self.info.idxcard,self.info.outdim,bias=False)
+
+    def forward(self,x):
+        """
+        x -- input of size (N,d) where N is the number of 
+             sample points.
+        """
+        # variable for collecting output of each 
+        lastx = torch.Tensor(x.shape[0],self.info.idxcard) 
+
+        # iterate over each term in the polynomial expansion
+        for i,nu in enumerate(self.terms):
+            lastx[:,i:i+1] = nu(x)
+
+        return self.last(lastx)
+
+    def poly_init(self):
+        """
+        Initializes all network parameters so that it behaves like a 
+        polynomial on the domain [a,b]^d
+        """
+        with torch.no_grad():
+            # initialize TensorPolynomial
+            for i,nu in enumerate(self.terms):
+                if nu.__class__.__name__ == 'TensorPolynomial':
+                    # initialize TensorPolynomial
+                    nu.poly_init()
+                if nu.__class__.__name__ == 'Linear':
+                    # linear case
+                    if sum(self.info.idxset[i]) == 1:
+                        nu.weight.fill_(1.)
+                        nu.bias.fill_(0.)
+                    # constant case:
+                    elif sum(self.info.idxset[i]) == 0:
+                        nu.weight.fill_(0.)
+                        nu.bias.fill_(1.)
+
+            # initialize the coefficients in the last layer
+            #self.last.bias.fill_(0.) 
+            self.last.weight.data = \
+            torch.tensor(self.info.coef_mat,dtype=torch.float)
+        return
+
+    def xavier_init(self):
+        """
+        initializes the linear layers using Xavier initialization.
+        The weights are initialized using xavier random initialization.
+        """
+        with torch.no_grad():
+            pass
+        return 
+
+class TensorPolynomial(nn.Module):
+    def __init__(self,dim,bias_vec,weight_mat,num_L):
+        """
+        INPUTS:
+        
+        bias_vec -- np array of roots be used in the first layer
+        weight_vec -- np array of weights to be used in the first layer
+        num_L      -- number of layers to use in each ProdNet in the BiTreeNet
+        """
+        super(TensorPolynomial,self).__init__()
+        
+        self.dim = dim
+        self.bias_vec = bias_vec
+        self.weight_mat = weight_mat
+        self.num_L = num_L
+        self.max_val = max(bias_vec)
+        self.min_val = min(bias_vec)
+
+        # set some paramters for the BiTreeProd Network we will use 
+        in_N = bias_vec.size
+
+        # define first layer to transform inputs into factored polynomial type
+        self.first = nn.Linear(dim,in_N)
+
+        # BiTreeProd network for multiplying all necessary (x_i - r_i)
+        self.btp = BiTreeProd(in_N,num_L,self.min_val,self.max_val)
+
+    def forward(self,x):
+        """
+        forward propogation through the network
+        """
+        h = self.first(x)
+        return self.btp(h)
+        
+    def poly_init(self):
+        with torch.no_grad():
+            # initialize first layer with roots and weights
+            self.first.weight.data = \
+            torch.tensor(self.weight_mat,dtype=torch.float)
+            self.first.bias.data = \
+            torch.tensor(self.bias_vec,dtype=torch.float)
+
+            # polyinit the BiTreeProd Network
+            self.btp.poly_init()
+
+        return
+
+    def set_double(self):
+        # set first layer to double
+        self.first.double()
+
+        # set btp to double
+        self.btp.set_double()
+
+        return
+"""
+# a default index set of dim=4
+# this is a total degree set of order 2
+defaultidx = np.array([[0, 0, 0, 0],
+                       [0, 0, 0, 1],
+                       [0, 0, 1, 0],
+                       [0, 1, 0, 0],
+                       [1, 0, 0, 0],
+                       [0, 0, 0, 2],
+                       [0, 0, 1, 1],
+                       [0, 1, 0, 1],
+                       [1, 0, 0, 1],
+                       [0, 0, 2, 0],
+                       [0, 1, 1, 0],
+                       [1, 0, 1, 0],
+                       [0, 2, 0, 0],
+                       [1, 1, 0, 0],
+                       [2, 0, 0, 0]])
+
+# a default set of coefficients
+defaultcoefs = np.array([[ 0.2],
+                         [-0.4],
+                         [-0.1],
+                         [ 0.2],
+                         [ 0.5],
+                         [ 0.3],
+                         [ 0.1],
+                         [ 0.3],
+                         [-0.6],
+                         [ 0.4],
+                         [ 0.3],
+                         [-0.7],
+                         [ 0.3],
+                         [ 0.4],
+                         [-0.4]])
+"""
+
 def test():
     # test of the class PolyInfo
     print("=<><><><><><><><><><><>=")
