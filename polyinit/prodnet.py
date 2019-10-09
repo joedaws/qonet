@@ -40,23 +40,24 @@ class BiTreeProd(nn.Module):
         # case when in_N is 1
         if in_N == 1:
             self.hidden.append(ProdNet(in_N,num_L,min_val,max_val))
-        # case for
+        
+        # case for in_N more than 1
         elif in_N > 1:
             # addpend prodnets to the list
             this_L = num_L
-            self.hidden.append(ProdNet(in_N,num_L,min_val-1.5,max_val+1.5))
+            self.hidden.append(ProdNet(in_N,num_L,min_val,max_val))
             current_N = self.hidden[0].out_N
             i = 1
+            
             # append the rest of the prodnets
             while current_N > 1:
-                #self.hidden.append(ProdNet(current_N,num_L,-max_val*2**i,max_val*2**i))
-                #new_min = min(min_val**2,max_val**2,min_val*max_val) - 2*(max_val-min_val)**2/(2**(2*this_L+2)) - 1 
-                #new_max = max(max_val**2,max_val**2) + 2*(max_val-min_val)**2/(2**(2*this_L+2)) + 1
-                
-                new_min = -1 - 2*(2)**2/(2**(2*this_L+2)) - (i+1)
-                new_max = 1 + 2*(2)**2/(2**(2*this_L+2)) + (i+1)
-
+                a = min_val
+                b = max_val
+                delta = 3*(b-a)**2/(2**(2*self.num_L+2))
+                new_min = min(a*b,a*a,b*b) - delta
+                new_max = max(a*b,a*a,b*b) + delta
                 self.hidden.append(ProdNet(current_N,num_L,new_min,new_max))
+                
                 # update number of remaining items to multiply
                 current_N = self.hidden[i].out_N
                 # increment depth counter
@@ -81,14 +82,7 @@ class BiTreeProd(nn.Module):
             h = self.hidden[i](h)
 
         return h
-        """
-        # middle layers
-        for i in range(1,self.num_prod-1):
-            h = self.hidden[i](h)
-
-        # output layer
-        return self.hidden[-1](h)
-        """
+    
     def poly_init(self):
         """
         initializes each sub-prodnet according to our polynomials
@@ -210,7 +204,6 @@ class ProdNet(nn.Module):
                     self.hidden[1].bias.data[4*i:4*(i+1)] = \
                     torch.tensor([0.,-0.5,-1.0,0.0],dtype=torch.float)
                 
-
                 # hk --> hk+1
                 for k in range(2,num_L):
                     hk = self.hidden[k]
@@ -382,6 +375,7 @@ class BiTreeProd_scale(nn.Module):
     def __init__(self,in_N,num_L,M):
         """
         computes the product of all inputs
+        but scales appropriatly
         """
         super(BiTreeProd_scale,self).__init__()
 
@@ -421,15 +415,18 @@ class BiTreeProd_scale(nn.Module):
         output should be (N,1)
         """
         M = self.M
+
         # first hidden layer
         h = M**2*self.hidden[0](x/M)
         
         for i in range(1,self.num_prod):
+            delta = 3*M**2/(2**(2*self.num_L+2))
+            M = M**2+delta
             h = M**2*self.hidden[i](h/M)
 
         return h
     
-    def scale_init(self):
+    def poly_init(self):
         """
         initializes each sub-prodnet according to our polynomials
         """
@@ -447,7 +444,7 @@ def test():
     x = torch.rand(100,2)
     y_truth = torch.mul(x[:,0:1],x[:,1:2])
     y_pred = net(x)
-    
+   
     """
     fig, ax = plt.subplots()
     ax.scatter(y_truth.detach().numpy(),y_truth.detach().numpy(),label='truth')
@@ -474,12 +471,10 @@ def test():
     
     print("TESTING BINARY PRODUCT")
     # testing BiTreeProd
-    net3 = BiTreeProd(in_N=5,num_L=5,min_val=-1.1,max_val=1.1)
+    net3 = BiTreeProd(in_N=5,num_L=5,min_val=-2.1,max_val=2.1)
     net3.poly_init()
-    x = torch.rand(100,5)
-    r1 = -1
-    r2 = 1
-    x = (r1-r2)*x+r2
+    x = torch.Tensor(size=(50,5))
+    x.uniform_(-2,2)
     y3_pred = net3(x)
     y3_truth = x[:,0:1]*x[:,1:2]*x[:,2:3]*x[:,3:4]*x[:,4:5]
    
@@ -495,4 +490,3 @@ def test():
 # perform the test
 if (__name__ == "__main__"):
     test()
-
